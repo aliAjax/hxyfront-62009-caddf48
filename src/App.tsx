@@ -1,3 +1,4 @@
+import { useState } from "react";
 import "./styles.css";
 
 const project = {
@@ -54,7 +55,100 @@ const project = {
   ]
 };
 
+interface ColorCard {
+  id: string;
+  colorName: string;
+  colorHex: string;
+  dyeType: string;
+  origin: string;
+  remark: string;
+}
+
+const initialCards: ColorCard[] = [
+  { id: "cc-001", colorName: "靛蓝", colorHex: "#1e3a5f", dyeType: "植物染", origin: "波斯", remark: "用于深蓝底色修复" },
+  { id: "cc-002", colorName: "赭石", colorHex: "#a0522d", dyeType: "矿物染", origin: "安纳托利亚", remark: "边缘纹样补线" },
+  { id: "cc-003", colorName: "藏红", colorHex: "#8b1a1a", dyeType: "植物染", origin: "藏毯", remark: "中心图案常用" },
+  { id: "cc-004", colorName: "苔绿", colorHex: "#4a7c59", dyeType: "植物染", origin: "高加索", remark: "叶纹补线配色" }
+];
+
+const emptyForm: Omit<ColorCard, "id"> = {
+  colorName: "",
+  colorHex: "#7c2d12",
+  dyeType: "",
+  origin: "",
+  remark: ""
+};
+
 function App() {
+  const [cards, setCards] = useState<ColorCard[]>(initialCards);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<Omit<ColorCard, "id">>(emptyForm);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const cardCount = cards.length;
+
+  const metricValues = [28, 6, cardCount, 91];
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  };
+
+  const openEdit = (card: ColorCard) => {
+    setEditingId(card.id);
+    setForm({
+      colorName: card.colorName,
+      colorHex: card.colorHex,
+      dyeType: card.dyeType,
+      origin: card.origin,
+      remark: card.remark
+    });
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(emptyForm);
+  };
+
+  const handleSubmit = () => {
+    if (!form.colorName.trim() || !form.dyeType.trim() || !form.origin.trim()) return;
+    if (editingId) {
+      setCards(prev =>
+        prev.map(c => (c.id === editingId ? { ...c, ...form } : c))
+      );
+    } else {
+      const newCard: ColorCard = {
+        id: "cc-" + Date.now().toString(36),
+        ...form
+      };
+      setCards(prev => [...prev, newCard]);
+    }
+    closeForm();
+  };
+
+  const confirmDelete = (id: string) => {
+    setDeletingId(id);
+  };
+
+  const executeDelete = () => {
+    if (deletingId) {
+      setCards(prev => prev.filter(c => c.id !== deletingId));
+      setDeletingId(null);
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeletingId(null);
+  };
+
+  const updateForm = (field: keyof Omit<ColorCard, "id">, value: string) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+  };
+
   return (
     <main className="app">
       <section className="hero">
@@ -67,7 +161,7 @@ function App() {
         {project.metrics.map((metric: string, index: number) => (
           <article key={metric}>
             <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
+            <strong>{metricValues[index]}</strong>
           </article>
         ))}
       </section>
@@ -121,6 +215,145 @@ function App() {
           ))}
         </div>
       </section>
+
+      <section className="panel colorcard-section">
+        <div className="heading">
+          <div>
+            <p>补线与染料</p>
+            <h2>材料色卡管理</h2>
+          </div>
+          <button className="primary" onClick={openAdd}>新增色卡</button>
+        </div>
+
+        {cards.length === 0 ? (
+          <div className="colorcard-empty">
+            <div className="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="6" width="36" height="36" rx="6" stroke="#d9e2ef" strokeWidth="2" fill="none" />
+                <circle cx="24" cy="24" r="8" stroke="#d9e2ef" strokeWidth="2" fill="none" />
+                <line x1="24" y1="14" x2="24" y2="34" stroke="#d9e2ef" strokeWidth="2" />
+                <line x1="14" y1="24" x2="34" y2="24" stroke="#d9e2ef" strokeWidth="2" />
+              </svg>
+            </div>
+            <p>暂无色卡记录</p>
+            <span>点击「新增色卡」添加补线颜色与染料信息</span>
+          </div>
+        ) : (
+          <div className="colorcard-grid">
+            {cards.map(card => (
+              <article key={card.id} className="colorcard-item">
+                <div className="colorcard-swatch" style={{ background: card.colorHex }}>
+                  <span className="colorcard-hex">{card.colorHex}</span>
+                </div>
+                <div className="colorcard-body">
+                  <div className="colorcard-header">
+                    <h3>{card.colorName}</h3>
+                    <div className="colorcard-actions">
+                      <button className="action-btn edit-btn" onClick={() => openEdit(card)} title="编辑">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                      </button>
+                      <button className="action-btn delete-btn" onClick={() => confirmDelete(card.id)} title="删除">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="colorcard-tags">
+                    <span className="tag tag-dye">{card.dyeType}</span>
+                    <span className="tag tag-origin">{card.origin}</span>
+                  </div>
+                  {card.remark && <p className="colorcard-remark">{card.remark}</p>}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {showForm && (
+        <div className="modal-overlay" onClick={closeForm}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{editingId ? "编辑色卡" : "新增色卡"}</h2>
+              <button className="close-btn" onClick={closeForm}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <label>
+                <span>补线颜色名称</span>
+                <input
+                  placeholder="如：靛蓝、赭石"
+                  value={form.colorName}
+                  onChange={e => updateForm("colorName", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>补线颜色色值</span>
+                <div className="color-input-row">
+                  <input
+                    type="color"
+                    value={form.colorHex}
+                    onChange={e => updateForm("colorHex", e.target.value)}
+                    className="color-picker"
+                  />
+                  <input
+                    placeholder="#000000"
+                    value={form.colorHex}
+                    onChange={e => updateForm("colorHex", e.target.value)}
+                  />
+                </div>
+              </label>
+              <label>
+                <span>染料类型</span>
+                <input
+                  placeholder="如：植物染、矿物染、化学染"
+                  value={form.dyeType}
+                  onChange={e => updateForm("dyeType", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>适用产地</span>
+                <input
+                  placeholder="如：波斯、藏毯"
+                  value={form.origin}
+                  onChange={e => updateForm("origin", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>备注</span>
+                <input
+                  placeholder="补充说明（选填）"
+                  value={form.remark}
+                  onChange={e => updateForm("remark", e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="modal-footer">
+              <button onClick={closeForm}>取消</button>
+              <button className="primary" onClick={handleSubmit}>
+                {editingId ? "保存修改" : "确认新增"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingId && (
+        <div className="modal-overlay" onClick={cancelDelete}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>确认删除</h2>
+            </div>
+            <div className="modal-body">
+              <p>删除后无法恢复，是否确认删除该色卡？</p>
+            </div>
+            <div className="modal-footer">
+              <button onClick={cancelDelete}>取消</button>
+              <button className="danger-btn" onClick={executeDelete}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
