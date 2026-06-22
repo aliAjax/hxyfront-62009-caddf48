@@ -112,6 +112,89 @@ const PRIORITY_OPTIONS: { value: RepairPriority; label: string; color: string }[
   { value: "low", label: "低", color: "#64748b" }
 ];
 
+type RepairStage = "before" | "during" | "after";
+
+const REPAIR_STAGE_LABEL: Record<RepairStage, string> = {
+  before: "修复前",
+  during: "修复中",
+  after: "修复后"
+};
+
+const REPAIR_STAGE_COLOR: Record<RepairStage, string> = {
+  before: "#dc2626",
+  during: "#b45309",
+  after: "#0f766e"
+};
+
+const REPAIR_STAGE_PLACEHOLDER: Record<RepairStage, string> = {
+  before: "#fecaca",
+  during: "#fed7aa",
+  after: "#99f6e4"
+};
+
+interface RepairImageItem {
+  id: string;
+  placeholderColor: string;
+  label: string;
+}
+
+interface RepairRecordItem {
+  id: string;
+  images: RepairImageItem[];
+  shootDate: string;
+  damageDesc: string;
+  repairNote: string;
+  materialRemark: string;
+}
+
+interface ArchiveRepairRecords {
+  archiveId: string;
+  before: RepairRecordItem;
+  during: RepairRecordItem;
+  after: RepairRecordItem;
+}
+
+const createEmptyRepairRecord = (stage: RepairStage): RepairRecordItem => ({
+  id: "rr-" + stage + "-" + Date.now().toString(36),
+  images: [
+    { id: "img-1", placeholderColor: REPAIR_STAGE_PLACEHOLDER[stage], label: "主视图" },
+    { id: "img-2", placeholderColor: REPAIR_STAGE_PLACEHOLDER[stage], label: "局部特写" }
+  ],
+  shootDate: "",
+  damageDesc: "",
+  repairNote: "",
+  materialRemark: ""
+});
+
+const createInitialRepairRecords = (archiveId: string): ArchiveRepairRecords => ({
+  archiveId,
+  before: {
+    ...createEmptyRepairRecord("before"),
+    shootDate: "2026-03-15",
+    damageDesc: "左边缘经线断裂约3cm，右侧纬线松脱，表面有轻微污渍",
+    repairNote: "待清洗后评估破损程度，确认补线方案",
+    materialRemark: "初步匹配赭石色羊毛纱线，需进一步比对色卡"
+  },
+  during: {
+    ...createEmptyRepairRecord("during"),
+    shootDate: "2026-04-02",
+    damageDesc: "清洗后破损区域清晰显现，边缘磨损延伸约5cm",
+    repairNote: "已完成定色工序，正在进行左边缘手工补织，采用原结法复刻",
+    materialRemark: "使用色卡 cc-002 赭石羊毛线，每厘米约42结"
+  },
+  after: {
+    ...createEmptyRepairRecord("after"),
+    id: "rr-after-empty",
+    images: [
+      { id: "img-1", placeholderColor: REPAIR_STAGE_PLACEHOLDER.after, label: "待上传" }
+    ],
+    shootDate: "",
+    damageDesc: "",
+    repairNote: "",
+    materialRemark: ""
+  }
+});
+
 const STEP_DEFINITIONS = [
   { key: "clean", name: "清洗", description: "使用专用清洁剂去除地毯表面灰尘与污渍，自然阴干" },
   { key: "colorfix", name: "定色", description: "检查染料牢固度，使用固色剂处理褪色区域，匹配色卡" },
@@ -138,6 +221,35 @@ const initialProcesses: ArchiveProcess[] = project.records.map((record) => ({
   description: record[2] + " · " + record[3],
   steps: createDefaultSteps()
 }));
+
+const initialRepairRecordsByArchive: Record<string, ArchiveRepairRecords> = {
+  "CAR-092": createInitialRepairRecords("CAR-092"),
+  "CAR-117": {
+    archiveId: "CAR-117",
+    before: {
+      id: "rr-before-117",
+      images: [
+        { id: "img-1", placeholderColor: REPAIR_STAGE_PLACEHOLDER.before, label: "中心区域" },
+        { id: "img-2", placeholderColor: REPAIR_STAGE_PLACEHOLDER.before, label: "缺口特写" }
+      ],
+      shootDate: "2026-02-28",
+      damageDesc: "中央花卉纹样缺失约2x2cm，周围纬线松散",
+      repairNote: "需要重建纹样结构，先固定周围纱线再补织",
+      materialRemark: "匹配藏红色羊毛线与植物染工艺"
+    },
+    during: {
+      id: "rr-during-117",
+      images: [
+        { id: "img-1", placeholderColor: REPAIR_STAGE_PLACEHOLDER.during, label: "补织进度" }
+      ],
+      shootDate: "2026-03-20",
+      damageDesc: "",
+      repairNote: "已完成底层经纱固定，正在进行纹样逐层补织",
+      materialRemark: "使用色卡 cc-003 藏红，按原纹样品对结"
+    },
+    after: createEmptyRepairRecord("after")
+  }
+};
 
 const initialCards: ColorCard[] = [
   { id: "cc-001", colorName: "靛蓝", colorHex: "#1e3a5f", dyeType: "植物染", origin: "波斯", remark: "用于深蓝底色修复" },
@@ -195,6 +307,11 @@ function App() {
     priority: "normal"
   });
   const [deletingMarkId, setDeletingMarkId] = useState<string | null>(null);
+
+  const [repairRecordsByArchive, setRepairRecordsByArchive] = useState<Record<string, ArchiveRepairRecords>>(initialRepairRecordsByArchive);
+  const [repairViewMode, setRepairViewMode] = useState<"manage" | "compare">("manage");
+  const [repairEditingStage, setRepairEditingStage] = useState<RepairStage | null>(null);
+  const [repairForm, setRepairForm] = useState<RepairRecordItem | null>(null);
 
   const cardCount = cards.length;
 
@@ -456,6 +573,96 @@ function App() {
     const pending = steps.find(s => s.status === "pending");
     if (pending) return pending;
     return steps.length > 0 ? steps[steps.length - 1] : null;
+  };
+
+  const getOrCreateRepairRecords = (archiveId: string): ArchiveRepairRecords => {
+    return repairRecordsByArchive[archiveId] || {
+      archiveId,
+      before: createEmptyRepairRecord("before"),
+      during: createEmptyRepairRecord("during"),
+      after: createEmptyRepairRecord("after")
+    };
+  };
+
+  const openRepairEdit = (stage: RepairStage) => {
+    if (!selectedProcessId) return;
+    const records = getOrCreateRepairRecords(selectedProcessId);
+    const record = records[stage];
+    setRepairEditingStage(stage);
+    setRepairForm(JSON.parse(JSON.stringify(record)));
+  };
+
+  const closeRepairEdit = () => {
+    setRepairEditingStage(null);
+    setRepairForm(null);
+  };
+
+  const updateRepairForm = (field: keyof RepairRecordItem, value: string) => {
+    if (!repairForm) return;
+    setRepairForm({ ...repairForm, [field]: value });
+  };
+
+  const addRepairImage = () => {
+    if (!repairForm || !repairEditingStage) return;
+    const newImage: RepairImageItem = {
+      id: "img-" + Date.now().toString(36),
+      placeholderColor: REPAIR_STAGE_PLACEHOLDER[repairEditingStage],
+      label: `图片 ${repairForm.images.length + 1}`
+    };
+    setRepairForm({ ...repairForm, images: [...repairForm.images, newImage] });
+  };
+
+  const removeRepairImage = (imageId: string) => {
+    if (!repairForm) return;
+    if (repairForm.images.length <= 1) return;
+    setRepairForm({ ...repairForm, images: repairForm.images.filter(img => img.id !== imageId) });
+  };
+
+  const updateRepairImageLabel = (imageId: string, label: string) => {
+    if (!repairForm) return;
+    setRepairForm({
+      ...repairForm,
+      images: repairForm.images.map(img => img.id === imageId ? { ...img, label } : img)
+    });
+  };
+
+  const handleRepairSubmit = () => {
+    if (!selectedProcessId || !repairForm || !repairEditingStage) return;
+    setRepairRecordsByArchive(prev => {
+      const existing = prev[selectedProcessId] || {
+        archiveId: selectedProcessId,
+        before: createEmptyRepairRecord("before"),
+        during: createEmptyRepairRecord("during"),
+        after: createEmptyRepairRecord("after")
+      };
+      return {
+        ...prev,
+        [selectedProcessId]: {
+          ...existing,
+          [repairEditingStage]: repairForm
+        }
+      };
+    });
+    closeRepairEdit();
+  };
+
+  const resetRepairStage = (stage: RepairStage) => {
+    if (!selectedProcessId) return;
+    setRepairRecordsByArchive(prev => {
+      const existing = prev[selectedProcessId] || {
+        archiveId: selectedProcessId,
+        before: createEmptyRepairRecord("before"),
+        during: createEmptyRepairRecord("during"),
+        after: createEmptyRepairRecord("after")
+      };
+      return {
+        ...prev,
+        [selectedProcessId]: {
+          ...existing,
+          [stage]: createEmptyRepairRecord(stage)
+        }
+      };
+    });
   };
 
   return (
@@ -1103,6 +1310,303 @@ function App() {
             <div className="modal-footer">
               <button onClick={cancelDeleteMark}>取消</button>
               <button className="danger-btn" onClick={executeDeleteMark}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <section className="panel repair-section">
+        <div className="heading">
+          <div>
+            <p>修复档案</p>
+            <h2>修复前后记录</h2>
+          </div>
+          <div className="repair-header-actions">
+            <div className="repair-view-toggle">
+              <button
+                className={repairViewMode === "manage" ? "active" : ""}
+                onClick={() => setRepairViewMode("manage")}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="12" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/></svg>
+                管理视图
+              </button>
+              <button
+                className={repairViewMode === "compare" ? "active" : ""}
+                onClick={() => setRepairViewMode("compare")}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="6" height="12" rx="1" stroke="currentColor" strokeWidth="1.5"/><rect x="9" y="2" width="6" height="12" rx="1" stroke="currentColor" strokeWidth="1.5"/><path d="M7 6h2M7 10h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                对比视图
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {selectedProcess ? (
+          repairViewMode === "manage" ? (
+            <div className="repair-manage-grid">
+              {(["before", "during", "after"] as RepairStage[]).map((stage) => {
+                const records = getOrCreateRepairRecords(selectedProcess.archiveId);
+                const record = records[stage];
+                const hasContent = record.shootDate || record.damageDesc || record.repairNote || record.materialRemark;
+                const stageColor = REPAIR_STAGE_COLOR[stage];
+                return (
+                  <article key={stage} className={`repair-card stage-${stage}`}>
+                    <div className="repair-card-header" style={{ borderColor: stageColor }}>
+                      <div className="repair-card-title">
+                        <span className="repair-stage-badge" style={{ background: stageColor }}>
+                          {REPAIR_STAGE_LABEL[stage]}
+                        </span>
+                        {hasContent && record.shootDate && (
+                          <span className="repair-card-date">📅 {record.shootDate}</span>
+                        )}
+                      </div>
+                      <div className="repair-card-actions">
+                        <button
+                          className="action-btn edit-btn"
+                          title="编辑记录"
+                          onClick={() => openRepairEdit(stage)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                        </button>
+                        <button
+                          className="action-btn delete-btn"
+                          title="清空记录"
+                          onClick={() => resetRepairStage(stage)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="repair-card-body">
+                      <div className="repair-image-gallery">
+                        {record.images.map((img, idx) => (
+                          <div key={img.id} className="repair-image-placeholder" title={img.label}>
+                            <div className="repair-image-block" style={{ background: img.placeholderColor }}>
+                              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                                <rect x="4" y="6" width="24" height="20" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                                <circle cx="12" cy="14" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+                                <path d="M5 24l6-6 5 5 3-3 8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </div>
+                            <span className="repair-image-label">{img.label}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="repair-fields-list">
+                        {record.damageDesc && (
+                          <div className="repair-field">
+                            <span className="repair-field-label">破损描述</span>
+                            <p className="repair-field-value">{record.damageDesc}</p>
+                          </div>
+                        )}
+                        {record.repairNote && (
+                          <div className="repair-field">
+                            <span className="repair-field-label">修复说明</span>
+                            <p className="repair-field-value">{record.repairNote}</p>
+                          </div>
+                        )}
+                        {record.materialRemark && (
+                          <div className="repair-field">
+                            <span className="repair-field-label">材料备注</span>
+                            <p className="repair-field-value">{record.materialRemark}</p>
+                          </div>
+                        )}
+                        {!record.damageDesc && !record.repairNote && !record.materialRemark && (
+                          <div className="repair-empty-hint">
+                            <span>暂无记录内容</span>
+                            <button className="repair-add-inline" onClick={() => openRepairEdit(stage)}>
+                              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                              添加记录
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="repair-compare-layout">
+              <div className="repair-compare-header">
+                {(["before", "during", "after"] as RepairStage[]).map((stage) => (
+                  <div key={stage} className="repair-compare-col-header">
+                    <span className="repair-stage-badge" style={{ background: REPAIR_STAGE_COLOR[stage] }}>
+                      {REPAIR_STAGE_LABEL[stage]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="repair-compare-row repair-compare-images-row">
+                {(["before", "during", "after"] as RepairStage[]).map((stage) => {
+                  const records = getOrCreateRepairRecords(selectedProcess.archiveId);
+                  const record = records[stage];
+                  return (
+                    <div key={stage} className="repair-compare-col">
+                      <div className="repair-compare-images">
+                        {record.images.map((img) => (
+                          <div key={img.id} className="repair-image-placeholder large" title={img.label}>
+                            <div className="repair-image-block" style={{ background: img.placeholderColor }}>
+                              <svg width="40" height="40" viewBox="0 0 32 32" fill="none">
+                                <rect x="4" y="6" width="24" height="20" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                                <circle cx="12" cy="14" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+                                <path d="M5 24l6-6 5 5 3-3 8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </div>
+                            <span className="repair-image-label">{img.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {["shootDate", "damageDesc", "repairNote", "materialRemark"].map((fieldKey) => {
+                const labelMap: Record<string, string> = {
+                  shootDate: "拍摄日期",
+                  damageDesc: "破损描述",
+                  repairNote: "修复说明",
+                  materialRemark: "材料备注"
+                };
+                return (
+                  <div key={fieldKey} className="repair-compare-row">
+                    <div className="repair-compare-field-label">{labelMap[fieldKey]}</div>
+                    {(["before", "during", "after"] as RepairStage[]).map((stage) => {
+                      const records = getOrCreateRepairRecords(selectedProcess.archiveId);
+                      const record = records[stage];
+                      const value = record[fieldKey as keyof RepairRecordItem];
+                      return (
+                        <div key={stage} className="repair-compare-col">
+                          {value ? (
+                            <p className="repair-compare-value">{String(value)}</p>
+                          ) : (
+                            <span className="repair-compare-empty">—</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          <div className="repair-empty">
+            <div className="empty-icon">
+              <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                <rect x="6" y="10" width="20" height="36" rx="3" stroke="#d9e2ef" strokeWidth="2"/>
+                <rect x="30" y="10" width="20" height="36" rx="3" stroke="#d9e2ef" strokeWidth="2"/>
+                <path d="M26 20h4M26 36h4" stroke="#d9e2ef" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <p>请从工序进度列表选择一条档案</p>
+            <span>选中后可维护修复前、修复中、修复后的三组记录</span>
+          </div>
+        )}
+      </section>
+
+      {repairEditingStage && repairForm && (
+        <div className="modal-overlay" onClick={closeRepairEdit}>
+          <div className="modal modal-repair" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>
+                <span className="repair-stage-badge" style={{ background: REPAIR_STAGE_COLOR[repairEditingStage] }}>
+                  {REPAIR_STAGE_LABEL[repairEditingStage]}
+                </span>
+                编辑修复记录
+              </h2>
+              <button className="close-btn" onClick={closeRepairEdit}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="repair-form-images">
+                <div className="repair-form-images-header">
+                  <span>图片占位（点击色块可编辑标签，可新增/删除）</span>
+                  <button className="repair-add-image-btn" onClick={addRepairImage}>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                    新增图片
+                  </button>
+                </div>
+                <div className="repair-form-images-grid">
+                  {repairForm.images.map((img) => (
+                    <div key={img.id} className="repair-form-image-item">
+                      <div
+                        className="repair-image-block form"
+                        style={{ background: img.placeholderColor }}
+                      >
+                        <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+                          <rect x="4" y="6" width="24" height="20" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                          <circle cx="12" cy="14" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M5 24l6-6 5 5 3-3 8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
+                      <input
+                        className="repair-form-image-label"
+                        placeholder="图片标签"
+                        value={img.label}
+                        onChange={(e) => updateRepairImageLabel(img.id, e.target.value)}
+                      />
+                      {repairForm.images.length > 1 && (
+                        <button
+                          className="repair-form-image-remove"
+                          onClick={() => removeRepairImage(img.id)}
+                          title="移除图片"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <label>
+                <span>拍摄日期</span>
+                <input
+                  type="date"
+                  value={repairForm.shootDate}
+                  onChange={(e) => updateRepairForm("shootDate", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>破损描述</span>
+                <textarea
+                  className="repair-textarea"
+                  placeholder="描述该阶段的破损情况、位置、面积等"
+                  value={repairForm.damageDesc}
+                  onChange={(e) => updateRepairForm("damageDesc", e.target.value)}
+                  rows={3}
+                />
+              </label>
+              <label>
+                <span>修复说明</span>
+                <textarea
+                  className="repair-textarea"
+                  placeholder="记录修复方案、工序、工艺要点等"
+                  value={repairForm.repairNote}
+                  onChange={(e) => updateRepairForm("repairNote", e.target.value)}
+                  rows={3}
+                />
+              </label>
+              <label>
+                <span>材料备注</span>
+                <textarea
+                  className="repair-textarea"
+                  placeholder="记录使用的纱线、染料、色卡编号等材料信息"
+                  value={repairForm.materialRemark}
+                  onChange={(e) => updateRepairForm("materialRemark", e.target.value)}
+                  rows={3}
+                />
+              </label>
+            </div>
+            <div className="modal-footer">
+              <button onClick={closeRepairEdit}>取消</button>
+              <button className="primary" onClick={handleRepairSubmit}>保存记录</button>
             </div>
           </div>
         </div>
