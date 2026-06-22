@@ -2028,8 +2028,15 @@ select {
   color: #172033;
 }
 
-.repair-compare-header .repair-compare-col-header:first-child {
-  background: transparent;
+.repair-compare-header .repair-compare-col-header.repair-compare-field-label {
+  background: #f1f5f9;
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  place-items: start;
+  border-right: 1px solid var(--border);
+  padding-left: 16px;
 }
 
 .repair-compare-row {
@@ -2050,6 +2057,11 @@ select {
   background: #ffffff;
 }
 
+.repair-compare-row.repair-compare-images-row > .repair-compare-field-label {
+  align-items: flex-start;
+  padding-top: 16px;
+}
+
 .repair-compare-field-label {
   padding: 14px 16px;
   font-size: 12px;
@@ -2059,7 +2071,7 @@ select {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   border-right: 1px solid var(--border);
 }
 
@@ -2243,6 +2255,11 @@ select:focus {
   }
 
   .repair-compare-col {
+    padding: 12px 10px;
+  }
+
+  .repair-compare-header .repair-compare-col-header.repair-compare-field-label {
+    font-size: 11px;
     padding: 12px 10px;
   }
 }

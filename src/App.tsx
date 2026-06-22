@@ -1431,6 +1431,9 @@ function App() {
           ) : (
             <div className="repair-compare-layout">
               <div className="repair-compare-header">
+                <div className="repair-compare-col-header repair-compare-field-label">
+                  阶段对比
+                </div>
                 {(["before", "during", "after"] as RepairStage[]).map((stage) => (
                   <div key={stage} className="repair-compare-col-header">
                     <span className="repair-stage-badge" style={{ background: REPAIR_STAGE_COLOR[stage] }}>
@@ -1441,6 +1444,9 @@ function App() {
               </div>
 
               <div className="repair-compare-row repair-compare-images-row">
+                <div className="repair-compare-field-label">
+                  图片记录
+                </div>
                 {(["before", "during", "after"] as RepairStage[]).map((stage) => {
                   const records = getOrCreateRepairRecords(selectedProcess.archiveId);
                   const record = records[stage];
