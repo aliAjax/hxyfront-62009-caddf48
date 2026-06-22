@@ -76,6 +76,42 @@ interface ArchiveProcess {
   steps: ProcessStep[];
 }
 
+type DamageType =
+  | "边缘磨损"
+  | "中心纹样缺口"
+  | "局部褪色"
+  | "边角破损"
+  | "纹样断裂"
+  | "污渍腐蚀";
+
+type RepairPriority = "urgent" | "high" | "normal" | "low";
+
+interface DamageMark {
+  id: string;
+  x: number;
+  y: number;
+  damageType: DamageType;
+  areaDesc: string;
+  threadColor: string;
+  priority: RepairPriority;
+}
+
+const DAMAGE_TYPES: DamageType[] = [
+  "边缘磨损",
+  "中心纹样缺口",
+  "局部褪色",
+  "边角破损",
+  "纹样断裂",
+  "污渍腐蚀"
+];
+
+const PRIORITY_OPTIONS: { value: RepairPriority; label: string; color: string }[] = [
+  { value: "urgent", label: "紧急", color: "#dc2626" },
+  { value: "high", label: "高", color: "#b45309" },
+  { value: "normal", label: "中", color: "#0f766e" },
+  { value: "low", label: "低", color: "#64748b" }
+];
+
 const STEP_DEFINITIONS = [
   { key: "clean", name: "清洗", description: "使用专用清洁剂去除地毯表面灰尘与污渍，自然阴干" },
   { key: "colorfix", name: "定色", description: "检查染料牢固度，使用固色剂处理褪色区域，匹配色卡" },
@@ -131,6 +167,34 @@ function App() {
   );
   const [processFilterOrigin, setProcessFilterOrigin] = useState<string>("全部");
   const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
+
+  const initialMarksByArchive: Record<string, DamageMark[]> = {
+    "CAR-092": [
+      { id: "m1", x: 12, y: 50, damageType: "边缘磨损", areaDesc: "左边缘经线断裂约3cm", threadColor: "#a0522d", priority: "high" },
+      { id: "m2", x: 88, y: 52, damageType: "边缘磨损", areaDesc: "右边缘纬线松脱", threadColor: "#7c2d12", priority: "normal" }
+    ],
+    "CAR-117": [
+      { id: "m3", x: 50, y: 48, damageType: "中心纹样缺口", areaDesc: "中央花卉纹缺失约2x2cm", threadColor: "#8b1a1a", priority: "urgent" }
+    ],
+    "CAR-138": [
+      { id: "m4", x: 30, y: 30, damageType: "局部褪色", areaDesc: "左上角靛蓝色区域褪色", threadColor: "#1e3a5f", priority: "low" }
+    ]
+  };
+
+  const [marksByArchive, setMarksByArchive] = useState<Record<string, DamageMark[]>>(initialMarksByArchive);
+  const [selectedMarkId, setSelectedMarkId] = useState<string | null>(null);
+  const [showMarkForm, setShowMarkForm] = useState(false);
+  const [editingMarkId, setEditingMarkId] = useState<string | null>(null);
+  const [pendingMarkPos, setPendingMarkPos] = useState<{ x: number; y: number } | null>(null);
+  const [markForm, setMarkForm] = useState<Omit<DamageMark, "id">>({
+    x: 50,
+    y: 50,
+    damageType: "边缘磨损",
+    areaDesc: "",
+    threadColor: "#7c2d12",
+    priority: "normal"
+  });
+  const [deletingMarkId, setDeletingMarkId] = useState<string | null>(null);
 
   const cardCount = cards.length;
 
@@ -295,6 +359,89 @@ function App() {
       return { ...p, steps: createDefaultSteps() };
     }));
     setExpandedSteps({});
+  };
+
+  const currentMarks = selectedProcessId ? (marksByArchive[selectedProcessId] || []) : [];
+
+  const handlePatternClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setPendingMarkPos({ x, y });
+    setEditingMarkId(null);
+    setMarkForm({
+      x,
+      y,
+      damageType: "边缘磨损",
+      areaDesc: "",
+      threadColor: "#7c2d12",
+      priority: "normal"
+    });
+    setShowMarkForm(true);
+  };
+
+  const openMarkEdit = (mark: DamageMark) => {
+    setEditingMarkId(mark.id);
+    setPendingMarkPos(null);
+    setMarkForm({
+      x: mark.x,
+      y: mark.y,
+      damageType: mark.damageType,
+      areaDesc: mark.areaDesc,
+      threadColor: mark.threadColor,
+      priority: mark.priority
+    });
+    setShowMarkForm(true);
+  };
+
+  const closeMarkForm = () => {
+    setShowMarkForm(false);
+    setEditingMarkId(null);
+    setPendingMarkPos(null);
+  };
+
+  const updateMarkForm = (field: keyof Omit<DamageMark, "id">, value: string) => {
+    setMarkForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleMarkSubmit = () => {
+    if (!selectedProcessId || !markForm.areaDesc.trim()) return;
+    if (editingMarkId) {
+      setMarksByArchive(prev => ({
+        ...prev,
+        [selectedProcessId]: (prev[selectedProcessId] || []).map(m =>
+          m.id === editingMarkId ? { ...m, ...markForm, id: m.id } : m
+        )
+      }));
+    } else {
+      const newMark: DamageMark = {
+        id: "mk-" + Date.now().toString(36),
+        ...markForm
+      };
+      setMarksByArchive(prev => ({
+        ...prev,
+        [selectedProcessId]: [...(prev[selectedProcessId] || []), newMark]
+      }));
+    }
+    closeMarkForm();
+  };
+
+  const confirmDeleteMark = (id: string) => {
+    setDeletingMarkId(id);
+  };
+
+  const executeDeleteMark = () => {
+    if (!selectedProcessId || !deletingMarkId) return;
+    setMarksByArchive(prev => ({
+      ...prev,
+      [selectedProcessId]: (prev[selectedProcessId] || []).filter(m => m.id !== deletingMarkId)
+    }));
+    if (selectedMarkId === deletingMarkId) setSelectedMarkId(null);
+    setDeletingMarkId(null);
+  };
+
+  const cancelDeleteMark = () => {
+    setDeletingMarkId(null);
   };
 
   const calculateProgress = (steps: ProcessStep[]): number => {
@@ -688,6 +835,278 @@ function App() {
           </section>
         </div>
       </section>
+
+      <section className="panel patternmark-section">
+        <div className="heading">
+          <div>
+            <p>档案详情</p>
+            <h2>纹样局部标记图</h2>
+          </div>
+          <div className="patternmark-header-actions">
+            <span className="process-stats">
+              当前标记 <b>{currentMarks.length}</b> 处
+            </span>
+          </div>
+        </div>
+
+        {selectedProcess ? (
+          <div className="patternmark-layout">
+            <div className="patternmark-canvas-wrap">
+              <div className="patternmark-canvas-hint">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                点击纹样示意图任意位置添加破损标记
+              </div>
+              <div className="patternmark-canvas" onClick={handlePatternClick}>
+                <svg className="patternmark-svg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <pattern id="carpet-bg" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+                      <rect width="40" height="40" fill="#f5efe4"/>
+                      <path d="M0 20 L40 20 M20 0 L20 40" stroke="#d9c9a8" strokeWidth="0.5"/>
+                    </pattern>
+                    <linearGradient id="carpet-border" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#7c2d12"/>
+                      <stop offset="100%" stopColor="#b45309"/>
+                    </linearGradient>
+                  </defs>
+                  <rect x="4" y="4" width="592" height="392" rx="8" fill="url(#carpet-bg)" stroke="url(#carpet-border)" strokeWidth="4"/>
+                  <rect x="30" y="30" width="540" height="340" rx="4" fill="none" stroke="#7c2d12" strokeWidth="2" strokeDasharray="6 4" opacity="0.6"/>
+                  <rect x="60" y="60" width="480" height="280" rx="2" fill="none" stroke="#b45309" strokeWidth="1.5" opacity="0.5"/>
+                  <g opacity="0.7">
+                    <circle cx="150" cy="120" r="28" fill="none" stroke="#7c2d12" strokeWidth="1.5"/>
+                    <circle cx="150" cy="120" r="14" fill="none" stroke="#0f766e" strokeWidth="1"/>
+                    <polygon points="150,90 162,120 150,150 138,120" fill="none" stroke="#b45309" strokeWidth="1"/>
+                    <circle cx="450" cy="120" r="28" fill="none" stroke="#7c2d12" strokeWidth="1.5"/>
+                    <circle cx="450" cy="120" r="14" fill="none" stroke="#0f766e" strokeWidth="1"/>
+                    <polygon points="450,90 462,120 450,150 438,120" fill="none" stroke="#b45309" strokeWidth="1"/>
+                    <circle cx="150" cy="280" r="28" fill="none" stroke="#7c2d12" strokeWidth="1.5"/>
+                    <circle cx="150" cy="280" r="14" fill="none" stroke="#0f766e" strokeWidth="1"/>
+                    <polygon points="150,250 162,280 150,310 138,280" fill="none" stroke="#b45309" strokeWidth="1"/>
+                    <circle cx="450" cy="280" r="28" fill="none" stroke="#7c2d12" strokeWidth="1.5"/>
+                    <circle cx="450" cy="280" r="14" fill="none" stroke="#0f766e" strokeWidth="1"/>
+                    <polygon points="450,250 462,280 450,310 438,280" fill="none" stroke="#b45309" strokeWidth="1"/>
+                    <g transform="translate(300 200)">
+                      <circle cx="0" cy="0" r="60" fill="none" stroke="#7c2d12" strokeWidth="2"/>
+                      <circle cx="0" cy="0" r="38" fill="none" stroke="#b45309" strokeWidth="1.5"/>
+                      <circle cx="0" cy="0" r="18" fill="none" stroke="#0f766e" strokeWidth="1.5"/>
+                      <path d="M0,-60 L0,60 M-60,0 L60,0 M-42,-42 L42,42 M42,-42 L-42,42" stroke="#7c2d12" strokeWidth="1" opacity="0.6"/>
+                    </g>
+                    <g opacity="0.4">
+                      {[80, 160, 240, 320, 400, 480, 560].map((x, i) => (
+                        <line key={"v"+i} x1={x} y1="70" x2={x} y2="330" stroke="#7c2d12" strokeWidth="0.6"/>
+                      ))}
+                      {[90, 170, 250, 330].map((y, i) => (
+                        <line key={"h"+i} x1="70" y1={y} x2="530" y2={y} stroke="#b45309" strokeWidth="0.6"/>
+                      ))}
+                    </g>
+                  </g>
+                </svg>
+
+                {currentMarks.map((mark, index) => {
+                  const priority = PRIORITY_OPTIONS.find(p => p.value === mark.priority);
+                  const isSelected = selectedMarkId === mark.id;
+                  return (
+                    <div
+                      key={mark.id}
+                      className={`patternmark-pin ${isSelected ? "selected" : ""}`}
+                      style={{
+                        left: mark.x + "%",
+                        top: mark.y + "%",
+                        borderColor: priority?.color || "#64748b",
+                        background: priority?.color || "#64748b"
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedMarkId(isSelected ? null : mark.id);
+                      }}
+                      title={`标记 ${index + 1}：${mark.damageType}`}
+                    >
+                      <span>{index + 1}</span>
+                      {isSelected && (
+                        <div className="patternmark-pin-tooltip">
+                          <b>标记 {index + 1}</b>
+                          <span>{mark.damageType}</span>
+                          <small>{mark.areaDesc}</small>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {pendingMarkPos && (
+                  <div
+                    className="patternmark-pin pending"
+                    style={{ left: pendingMarkPos.x + "%", top: pendingMarkPos.y + "%" }}
+                  >
+                    <span>?</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="patternmark-sidebar">
+              <div className="patternmark-sidebar-title">
+                <span>破损标记列表</span>
+                <span className="patternmark-count">{currentMarks.length}</span>
+              </div>
+              {currentMarks.length === 0 ? (
+                <div className="patternmark-empty">
+                  <div className="empty-icon">
+                    <svg width="42" height="42" viewBox="0 0 48 48" fill="none">
+                      <circle cx="24" cy="24" r="18" stroke="#d9e2ef" strokeWidth="2" strokeDasharray="4 3"/>
+                      <path d="M24 14v20M14 24h20" stroke="#d9e2ef" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                  </div>
+                  <p>暂无标记</p>
+                  <span>点击左侧纹样图添加破损标记</span>
+                </div>
+              ) : (
+                <div className="patternmark-list">
+                  {currentMarks.map((mark, index) => {
+                    const priority = PRIORITY_OPTIONS.find(p => p.value === mark.priority);
+                    const isSelected = selectedMarkId === mark.id;
+                    return (
+                      <div
+                        key={mark.id}
+                        className={`patternmark-item ${isSelected ? "selected" : ""}`}
+                        onClick={() => setSelectedMarkId(isSelected ? null : mark.id)}
+                      >
+                        <div className="patternmark-item-index" style={{ background: priority?.color || "#64748b" }}>
+                          {index + 1}
+                        </div>
+                        <div className="patternmark-item-body">
+                          <div className="patternmark-item-head">
+                            <h4>{mark.damageType}</h4>
+                            <span className="patternmark-priority" style={{ color: priority?.color, borderColor: priority?.color }}>
+                              {priority?.label}
+                            </span>
+                          </div>
+                          <p className="patternmark-item-desc">{mark.areaDesc}</p>
+                          <div className="patternmark-item-meta">
+                            <span className="patternmark-color-chip" style={{ background: mark.threadColor }} title={mark.threadColor}/>
+                            <span className="patternmark-color-hex">{mark.threadColor}</span>
+                          </div>
+                        </div>
+                        <div className="patternmark-item-actions">
+                          <button className="action-btn edit-btn" title="编辑" onClick={(e) => { e.stopPropagation(); openMarkEdit(mark); }}>
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                          </button>
+                          <button className="action-btn delete-btn" title="删除" onClick={(e) => { e.stopPropagation(); confirmDeleteMark(mark.id); }}>
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="patternmark-empty large">
+            <div className="empty-icon">
+              <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                <rect x="8" y="8" width="40" height="40" rx="8" stroke="#d9e2ef" strokeWidth="2" fill="none"/>
+                <circle cx="20" cy="22" r="4" stroke="#d9e2ef" strokeWidth="1.5"/>
+                <circle cx="36" cy="34" r="4" stroke="#d9e2ef" strokeWidth="1.5"/>
+                <path d="M20 22 L36 34" stroke="#d9e2ef" strokeWidth="1.5" strokeDasharray="3 3"/>
+              </svg>
+            </div>
+            <p>请从左侧工序进度列表选择一条档案</p>
+            <span>选中后可在纹样示意图上添加与管理破损标记</span>
+          </div>
+        )}
+      </section>
+
+      {showMarkForm && (
+        <div className="modal-overlay" onClick={closeMarkForm}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{editingMarkId ? "编辑破损标记" : "新增破损标记"}</h2>
+              <button className="close-btn" onClick={closeMarkForm}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <label>
+                <span>破损类型</span>
+                <select
+                  value={markForm.damageType}
+                  onChange={e => updateMarkForm("damageType", e.target.value)}
+                >
+                  {DAMAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>区域说明</span>
+                <input
+                  placeholder="如：左边缘经线断裂约3cm"
+                  value={markForm.areaDesc}
+                  onChange={e => updateMarkForm("areaDesc", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>补线颜色</span>
+                <div className="color-input-row">
+                  <input
+                    type="color"
+                    value={markForm.threadColor}
+                    onChange={e => updateMarkForm("threadColor", e.target.value)}
+                    className="color-picker"
+                  />
+                  <input
+                    placeholder="#000000"
+                    value={markForm.threadColor}
+                    onChange={e => updateMarkForm("threadColor", e.target.value)}
+                  />
+                </div>
+              </label>
+              <label>
+                <span>修复优先级</span>
+                <div className="priority-radio-row">
+                  {PRIORITY_OPTIONS.map(opt => (
+                    <label key={opt.value} className={`priority-radio ${markForm.priority === opt.value ? "active" : ""}`}>
+                      <input
+                        type="radio"
+                        name="priority"
+                        value={opt.value}
+                        checked={markForm.priority === opt.value}
+                        onChange={() => updateMarkForm("priority", opt.value)}
+                      />
+                      <span style={{ borderColor: opt.color, color: opt.color }}>{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </label>
+              <div className="patternmark-pos-preview">
+                <span>📍 标记位置：X {markForm.x.toFixed(1)}% · Y {markForm.y.toFixed(1)}%</span>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={closeMarkForm}>取消</button>
+              <button className="primary" onClick={handleMarkSubmit}>
+                {editingMarkId ? "保存修改" : "确认添加"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingMarkId && (
+        <div className="modal-overlay" onClick={cancelDeleteMark}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>确认删除标记</h2>
+            </div>
+            <div className="modal-body">
+              <p>删除后该标记将从图上移除，编号会自动重新整理，是否确认？</p>
+            </div>
+            <div className="modal-footer">
+              <button onClick={cancelDeleteMark}>取消</button>
+              <button className="danger-btn" onClick={executeDeleteMark}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="panel colorcard-section">
         <div className="heading">
