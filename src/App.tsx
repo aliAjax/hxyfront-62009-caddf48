@@ -55,6 +55,54 @@ interface ColorCard {
   remark: string;
 }
 
+type StepStatus = "pending" | "in-progress" | "done";
+
+interface ProcessStep {
+  key: string;
+  name: string;
+  description: string;
+  status: StepStatus;
+  owner: string;
+  remark: string;
+  estimateDate: string;
+  doneDate: string;
+}
+
+interface ArchiveProcess {
+  archiveId: string;
+  archiveNo: string;
+  origin: string;
+  description: string;
+  steps: ProcessStep[];
+}
+
+const STEP_DEFINITIONS = [
+  { key: "clean", name: "清洗", description: "使用专用清洁剂去除地毯表面灰尘与污渍，自然阴干" },
+  { key: "colorfix", name: "定色", description: "检查染料牢固度，使用固色剂处理褪色区域，匹配色卡" },
+  { key: "repair", name: "补线", description: "按照原始纹样结法，使用匹配纱线进行破损区域手工补织" },
+  { key: "flatten", name: "压平", description: "通过专业压板与蒸汽处理，修复地毯平整度与边缘卷曲" },
+  { key: "archive", name: "归档", description: "拍摄修复前后对比照，填写修复报告，入库登记归档" }
+];
+
+function createDefaultSteps(): ProcessStep[] {
+  return STEP_DEFINITIONS.map((s, i) => ({
+    ...s,
+    status: i === 0 ? "in-progress" : ("pending" as StepStatus),
+    owner: "",
+    remark: "",
+    estimateDate: "",
+    doneDate: ""
+  }));
+}
+
+const initialProcesses: ArchiveProcess[] = project.records.map((record) => ({
+  archiveId: record[0],
+  archiveNo: record[0],
+  origin: record[1],
+  description: record[2] + " · " + record[3],
+  steps: createDefaultSteps()
+}));
+
 const initialCards: ColorCard[] = [
   { id: "cc-001", colorName: "靛蓝", colorHex: "#1e3a5f", dyeType: "植物染", origin: "波斯", remark: "用于深蓝底色修复" },
   { id: "cc-002", colorName: "赭石", colorHex: "#a0522d", dyeType: "矿物染", origin: "安纳托利亚", remark: "边缘纹样补线" },
@@ -77,6 +125,12 @@ function App() {
   const [form, setForm] = useState<Omit<ColorCard, "id">>(emptyForm);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeOrigin, setActiveOrigin] = useState<string>("全部");
+  const [processes, setProcesses] = useState<ArchiveProcess[]>(initialProcesses);
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(
+    initialProcesses.length > 0 ? initialProcesses[0].archiveId : null
+  );
+  const [processFilterOrigin, setProcessFilterOrigin] = useState<string>("全部");
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
 
   const cardCount = cards.length;
 
@@ -88,7 +142,21 @@ function App() {
 
   const recordCount = filteredRecords.length;
 
-  const metricValues = [28, project.records.length, cardCount, 91];
+  const inProgressCount = processes.filter(p =>
+    p.steps.some(s => s.status === "in-progress")
+  ).length;
+  const allDoneCount = processes.filter(p =>
+    p.steps.every(s => s.status === "done")
+  ).length;
+
+  const metricValues = [
+    processes.length - inProgressCount - allDoneCount,
+    project.records.length,
+    cardCount,
+    processes.length > 0
+      ? Math.round((allDoneCount / processes.length) * 100)
+      : 0
+  ];
 
   const openAdd = () => {
     setEditingId(null);
@@ -147,6 +215,100 @@ function App() {
 
   const updateForm = (field: keyof Omit<ColorCard, "id">, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const filteredProcesses = processFilterOrigin === "全部"
+    ? processes
+    : processes.filter(p => p.origin === processFilterOrigin);
+
+  const selectedProcess = processes.find(p => p.archiveId === selectedProcessId) || null;
+
+  const processOriginFilters = ["全部", ...project.filters];
+
+  const toggleStepExpand = (stepKey: string) => {
+    setExpandedSteps(prev => ({
+      ...prev,
+      [stepKey]: !prev[stepKey]
+    }));
+  };
+
+  const updateStepField = (
+    archiveId: string,
+    stepKey: string,
+    field: keyof Omit<ProcessStep, "key" | "name" | "description" | "status">,
+    value: string
+  ) => {
+    setProcesses(prev => prev.map(p => {
+      if (p.archiveId !== archiveId) return p;
+      return {
+        ...p,
+        steps: p.steps.map(s =>
+          s.key === stepKey ? { ...s, [field]: value } : s
+        )
+      };
+    }));
+  };
+
+  const setStepStatus = (
+    archiveId: string,
+    stepKey: string,
+    newStatus: StepStatus
+  ) => {
+    setProcesses(prev => prev.map(p => {
+      if (p.archiveId !== archiveId) return p;
+      const stepIndex = p.steps.findIndex(s => s.key === stepKey);
+      if (stepIndex === -1) return p;
+      const newSteps = p.steps.map((s, i) => {
+        if (i !== stepIndex) return s;
+        const today = new Date().toISOString().split("T")[0];
+        return {
+          ...s,
+          status: newStatus,
+          doneDate: newStatus === "done" ? today : s.doneDate
+        };
+      });
+      if (newStatus === "in-progress") {
+        for (let i = 0; i < stepIndex; i++) {
+          if (newSteps[i].status === "pending") {
+            newSteps[i] = { ...newSteps[i], status: "done" };
+          }
+        }
+      }
+      if (newStatus === "done") {
+        for (let i = 0; i < stepIndex; i++) {
+          if (newSteps[i].status !== "done") {
+            newSteps[i] = { ...newSteps[i], status: "done", doneDate: newSteps[i].doneDate || new Date().toISOString().split("T")[0] };
+          }
+        }
+        const next = stepIndex + 1;
+        if (next < newSteps.length && newSteps[next].status === "pending") {
+          newSteps[next] = { ...newSteps[next], status: "in-progress" };
+        }
+      }
+      return { ...p, steps: newSteps };
+    }));
+  };
+
+  const resetProcessSteps = (archiveId: string) => {
+    setProcesses(prev => prev.map(p => {
+      if (p.archiveId !== archiveId) return p;
+      return { ...p, steps: createDefaultSteps() };
+    }));
+    setExpandedSteps({});
+  };
+
+  const calculateProgress = (steps: ProcessStep[]): number => {
+    if (steps.length === 0) return 0;
+    const done = steps.filter(s => s.status === "done").length;
+    return Math.round((done / steps.length) * 100);
+  };
+
+  const getCurrentStep = (steps: ProcessStep[]): ProcessStep | null => {
+    const inProgress = steps.find(s => s.status === "in-progress");
+    if (inProgress) return inProgress;
+    const pending = steps.find(s => s.status === "pending");
+    if (pending) return pending;
+    return steps.length > 0 ? steps[steps.length - 1] : null;
   };
 
   return (
@@ -267,6 +429,264 @@ function App() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="panel process-section">
+        <div className="heading">
+          <div>
+            <p>修复流水线</p>
+            <h2>工序进度追踪</h2>
+          </div>
+          <div className="process-header-actions">
+            <span className="process-stats">
+              进行中 <b>{inProgressCount}</b> · 已完成 <b>{allDoneCount}</b>
+            </span>
+          </div>
+        </div>
+
+        <div className="process-filters">
+          {processOriginFilters.map((origin) => (
+            <button
+              key={origin}
+              className={`origin-filter-btn ${processFilterOrigin === origin ? "active" : ""}`}
+              onClick={() => {
+                setProcessFilterOrigin(origin);
+                const firstMatch = origin === "全部"
+                  ? processes[0]
+                  : processes.find(p => p.origin === origin);
+                if (firstMatch) setSelectedProcessId(firstMatch.archiveId);
+              }}
+            >
+              {origin}
+            </button>
+          ))}
+        </div>
+
+        <div className="process-layout">
+          <aside className="process-sidebar">
+            <div className="process-sidebar-title">档案列表</div>
+            <div className="process-sidebar-list">
+              {filteredProcesses.length === 0 ? (
+                <div className="process-sidebar-empty">暂无该产地档案</div>
+              ) : (
+                filteredProcesses.map((proc) => {
+                  const progress = calculateProgress(proc.steps);
+                  const currentStep = getCurrentStep(proc.steps);
+                  return (
+                    <div
+                      key={proc.archiveId}
+                      className={`process-sidebar-item ${selectedProcessId === proc.archiveId ? "active" : ""}`}
+                      onClick={() => setSelectedProcessId(proc.archiveId)}
+                    >
+                      <div className="process-sidebar-head">
+                        <span className="process-sidebar-no">{proc.archiveNo}</span>
+                        <span className={`process-sidebar-badge status-${currentStep?.status || "pending"}`}>
+                          {currentStep?.status === "done" ? "已完工" : currentStep?.name || "待开始"}
+                        </span>
+                      </div>
+                      <p className="process-sidebar-desc">{proc.description}</p>
+                      <div className="process-sidebar-progress">
+                        <div className="process-progress-bar">
+                          <div
+                            className="process-progress-fill"
+                            style={{ width: progress + "%" }}
+                          />
+                        </div>
+                        <span>{progress}%</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </aside>
+
+          <section className="process-detail">
+            {selectedProcess ? (
+              <>
+                <div className="process-detail-header">
+                  <div>
+                    <h3 className="process-detail-no">{selectedProcess.archiveNo}</h3>
+                    <div className="process-detail-meta">
+                      <span className="process-detail-origin">{selectedProcess.origin}</span>
+                      <span className="process-detail-desc">{selectedProcess.description}</span>
+                    </div>
+                  </div>
+                  <div className="process-detail-actions">
+                    <div className="process-detail-progress">
+                      <span className="process-detail-progress-label">总体进度</span>
+                      <div className="process-progress-bar large">
+                        <div
+                          className="process-progress-fill"
+                          style={{ width: calculateProgress(selectedProcess.steps) + "%" }}
+                        />
+                      </div>
+                      <span className="process-detail-progress-value">
+                        {calculateProgress(selectedProcess.steps)}%
+                      </span>
+                    </div>
+                    <button
+                      className="process-reset-btn"
+                      onClick={() => resetProcessSteps(selectedProcess.archiveId)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 1 1 2 4.47M2 10V5h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      重置工序
+                    </button>
+                  </div>
+                </div>
+
+                <div className="stepper">
+                  {selectedProcess.steps.map((step, index) => {
+                    const isExpanded = expandedSteps[step.key];
+                    const isLast = index === selectedProcess.steps.length - 1;
+                    return (
+                      <div
+                        key={step.key}
+                        className={`step-item status-${step.status} ${isExpanded ? "expanded" : ""}`}
+                      >
+                        <div
+                          className="step-node-row"
+                          onClick={() => toggleStepExpand(step.key)}
+                        >
+                          <div className="step-connector-wrap">
+                            <div className={`step-node status-${step.status}`}>
+                              {step.status === "done" ? (
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              ) : (
+                                <span>{index + 1}</span>
+                              )}
+                            </div>
+                            {!isLast && <div className={`step-connector status-${step.status}`} />}
+                          </div>
+                          <div className="step-main">
+                            <div className="step-head">
+                              <h4 className="step-name">{step.name}</h4>
+                              <div className="step-head-right">
+                                {step.owner && <span className="step-owner-chip">👤 {step.owner}</span>}
+                                <span className={`step-status-tag status-${step.status}`}>
+                                  {step.status === "done" ? "已完成" : step.status === "in-progress" ? "进行中" : "待开始"}
+                                </span>
+                                <span className="step-expand-icon">
+                                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                </span>
+                              </div>
+                            </div>
+                            <p className="step-desc">{step.description}</p>
+                            <div className="step-meta-row">
+                              {step.estimateDate && (
+                                <span className="step-meta">
+                                  📅 预计：{step.estimateDate}
+                                </span>
+                              )}
+                              {step.status === "done" && step.doneDate && (
+                                <span className="step-meta done">
+                                  ✅ 完成：{step.doneDate}
+                                </span>
+                              )}
+                              {step.status === "in-progress" && (
+                                <span className="step-meta in-progress">
+                                  ⏳ 正在处理中
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="step-expand-panel">
+                            <div className="step-action-row">
+                              <div className="step-action-label">切换状态：</div>
+                              <div className="step-action-buttons">
+                                <button
+                                  className={`status-btn pending ${step.status === "pending" ? "active" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStepStatus(selectedProcess.archiveId, step.key, "pending");
+                                  }}
+                                >
+                                  待开始
+                                </button>
+                                <button
+                                  className={`status-btn in-progress ${step.status === "in-progress" ? "active" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStepStatus(selectedProcess.archiveId, step.key, "in-progress");
+                                  }}
+                                >
+                                  进行中
+                                </button>
+                                <button
+                                  className={`status-btn done ${step.status === "done" ? "active" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStepStatus(selectedProcess.archiveId, step.key, "done");
+                                  }}
+                                >
+                                  已完成
+                                </button>
+                              </div>
+                            </div>
+                            <div className="step-form-grid">
+                              <label>
+                                <span>负责人</span>
+                                <input
+                                  placeholder="填写负责人姓名"
+                                  value={step.owner}
+                                  onChange={(e) => updateStepField(
+                                    selectedProcess.archiveId, step.key, "owner", e.target.value
+                                  )}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </label>
+                              <label>
+                                <span>预计完成时间</span>
+                                <input
+                                  type="date"
+                                  value={step.estimateDate}
+                                  onChange={(e) => updateStepField(
+                                    selectedProcess.archiveId, step.key, "estimateDate", e.target.value
+                                  )}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </label>
+                              <label className="step-form-full">
+                                <span>备注</span>
+                                <input
+                                  placeholder="填写本工序的特殊说明、注意事项等"
+                                  value={step.remark}
+                                  onChange={(e) => updateStepField(
+                                    selectedProcess.archiveId, step.key, "remark", e.target.value
+                                  )}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </label>
+                            </div>
+                            {step.remark && (
+                              <div className="step-remark-display">
+                                <span>📝 备注：</span>
+                                <p>{step.remark}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="process-detail-empty">
+                <div className="empty-icon">
+                  <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                    <circle cx="28" cy="28" r="22" stroke="#d9e2ef" strokeWidth="2" />
+                    <path d="M28 14v14l9 5" stroke="#d9e2ef" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </div>
+                <p>请从左侧选择一条档案查看工序进度</p>
+              </div>
+            )}
+          </section>
+        </div>
       </section>
 
       <section className="panel colorcard-section">
