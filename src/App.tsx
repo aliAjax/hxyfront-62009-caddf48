@@ -34,24 +34,15 @@ const project = {
     "破损区域"
   ],
   "records": [
-    [
-      "CAR-092",
-      "波斯",
-      "羊毛，约1960s",
-      "边缘磨损待补线"
-    ],
-    [
-      "CAR-117",
-      "安纳托利亚",
-      "植物染，结密度42",
-      "中心纹样缺口"
-    ],
-    [
-      "CAR-138",
-      "藏毯",
-      "局部褪色",
-      "需匹配靛蓝色卡"
-    ]
+    ["CAR-092", "波斯", "羊毛，约1960s", "边缘磨损待补线"],
+    ["CAR-117", "安纳托利亚", "植物染，结密度42", "中心纹样缺口"],
+    ["CAR-138", "藏毯", "局部褪色", "需匹配靛蓝色卡"],
+    ["CAR-145", "波斯", "丝毛混纺，约1940s", "边角破损需重织"],
+    ["CAR-156", "高加索", "纯羊毛，约1970s", "几何纹样磨损"],
+    ["CAR-172", "安纳托利亚", "羊毛，约1950s", "边框纹样断裂"],
+    ["CAR-188", "藏毯", "纯羊毛，手工纺线", "龙纹图案补线"],
+    ["CAR-203", "高加索", "植物染，结密度38", "中央菱形纹残缺"],
+    ["CAR-215", "波斯", "真丝，约1930s", "金葱线氧化褪色"]
   ]
 };
 
@@ -85,10 +76,19 @@ function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<ColorCard, "id">>(emptyForm);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activeOrigin, setActiveOrigin] = useState<string>("全部");
 
   const cardCount = cards.length;
 
-  const metricValues = [28, 6, cardCount, 91];
+  const originFilters = ["全部", ...project.filters];
+
+  const filteredRecords = activeOrigin === "全部"
+    ? project.records
+    : project.records.filter((record: string[]) => record[1] === activeOrigin);
+
+  const recordCount = filteredRecords.length;
+
+  const metricValues = [28, project.records.length, cardCount, 91];
 
   const openAdd = () => {
     setEditingId(null);
@@ -214,6 +214,59 @@ function App() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="panel archive-section">
+        <div className="heading">
+          <div>
+            <p>产地分类</p>
+            <h2>按产地浏览档案</h2>
+          </div>
+          <span className="record-count">共 {recordCount} 条记录</span>
+        </div>
+
+        <div className="origin-filters">
+          {originFilters.map((origin: string) => (
+            <button
+              key={origin}
+              className={`origin-filter-btn ${activeOrigin === origin ? "active" : ""}`}
+              onClick={() => setActiveOrigin(origin)}
+            >
+              {origin}
+            </button>
+          ))}
+        </div>
+
+        {filteredRecords.length === 0 ? (
+          <div className="archive-empty">
+            <div className="empty-icon">
+              <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="8" y="8" width="40" height="40" rx="8" stroke="#d9e2ef" strokeWidth="2" fill="none" />
+                <path d="M18 22h20M18 30h20M18 38h12" stroke="#d9e2ef" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </div>
+            <p>暂无该产地的档案记录</p>
+            <span>切换其他产地查看更多档案</span>
+          </div>
+        ) : (
+          <div className="archive-list">
+            {filteredRecords.map((record: string[], index: number) => (
+              <article key={record.join("-")} className="archive-item">
+                <div className="archive-index">
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                </div>
+                <div className="archive-content">
+                  <div className="archive-header">
+                    <h3>{record[0]}</h3>
+                    <span className="archive-origin-tag">{record[1]}</span>
+                  </div>
+                  <p className="archive-desc">{record[2]}</p>
+                  <p className="archive-status">{record[3]}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="panel colorcard-section">
